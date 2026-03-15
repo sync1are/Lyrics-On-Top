@@ -2,7 +2,7 @@ const axios = require('axios');
 const express = require('express');
 const { shell } = require('electron');
 
-const CLIENT_ID = 'YOURE_SECRET_ID_HERE'; /**get froim spotify developers portal*/
+const CLIENT_ID = 'YOURE_SECRET_ID_HERE'; /**get froim spotify developers portal make sure to add the same redirect url in the spotify developer page as shown here*/
 const CLIENT_SECRET = 'YOUR_SECRET_ID_HERE';
 const REDIRECT_URI = 'http://127.0.0.1:8888/callback';
 const SCOPES = 'user-read-currently-playing user-read-playback-state';
