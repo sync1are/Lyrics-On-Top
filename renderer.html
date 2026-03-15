@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Lyrics Overlay</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500&family=Playfair+Display:ital,wght@0,500;1,500&display=swap"
+    rel="stylesheet"
+  />
+  <style>
+    /* ── Design Tokens ─────────────────────────────── */
+    :root {
+      --color-bg: transparent;
+      --color-current: #fffaf0;            /* warm white */
+      --color-faded: rgba(255, 250, 240, 0.35);
+      --color-accent: #d4a24e;             /* warm amber */
+      --color-accent-low: rgba(212, 162, 78, 0.25);
+      --color-track: rgba(255, 250, 240, 0.5);
+      --color-muted: rgba(255, 250, 240, 0.18);
+
+      --font-display: 'Playfair Display', Georgia, serif;
+      --font-body: 'DM Sans', system-ui, sans-serif;
+
+      --transition-lyrics: 420ms cubic-bezier(0.22, 1, 0.36, 1);
+    }
+
+    /* ── Reset & Base ──────────────────────────────── */
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: var(--color-bg);
+      -webkit-app-region: drag;
+      user-select: none;
+    }
+
+    body {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      font-family: var(--font-body);
+    }
+
+    /* ── Control buttons ───────────────────────────── */
+    #controls {
+      position: fixed;
+      top: 12px;
+      right: 14px;
+      display: flex;
+      gap: 8px;
+      z-index: 150;
+      -webkit-app-region: no-drag;
+    }
+
+    #controls button {
+      width: 34px;
+      height: 34px;
+      border: none;
+      border-radius: 10px;
+      background: var(--color-muted);
+      color: var(--color-faded);
+      font-size: 16px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 200ms, color 200ms, transform 200ms;
+      backdrop-filter: blur(6px);
+    }
+
+    #controls button:hover {
+      background: var(--color-accent-low);
+      color: var(--color-current);
+    }
+
+    #controls button.active {
+      color: var(--color-accent);
+      transform: translateY(-2px);
+    }
+
+    /* ── Lyrics Container ─────────────────────────── */
+    #lyrics-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      text-align: center;
+      padding: 0 40px;
+      transition: opacity 350ms ease;
+    }
+
+    #lyrics-container.hidden {
+      opacity: 0;
+      pointer-events: none;
+      position: absolute;
+    }
+
+    .lyric-line {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 720px;
+    }
+
+    #lyric-prev,
+    #lyric-next {
+      font-family: var(--font-body);
+      font-size: 15px;
+      font-weight: 400;
+      color: var(--color-faded);
+      letter-spacing: 0.02em;
+      line-height: 1.5;
+    }
+
+    #lyric-current {
+      font-family: var(--font-display);
+      font-size: 32px;
+      font-weight: 500;
+      color: var(--color-current);
+      line-height: 1.3;
+      text-shadow: 0 0 28px rgba(212, 162, 78, 0.18);
+      transition: none; /* handled by JS animation */
+    }
+
+    /* entrance animation class */
+    #lyric-current.animate-in {
+      animation: lyricIn var(--transition-lyrics) forwards;
+    }
+
+    @keyframes lyricIn {
+      0% {
+        opacity: 0;
+        transform: translateY(14px);
+      }
+      100% {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    /* ── Visualizer Canvas ────────────────────────── */
+    #visualizer-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 0;
+      opacity: 0;
+      pointer-events: none;
+      position: absolute;
+      transition: opacity 500ms ease;
+    }
+
+    #visualizer-container.visible {
+      opacity: 1;
+      pointer-events: auto;
+      position: relative;
+    }
+
+    #visualizer-canvas {
+      width: 720px;
+      height: 140px;
+      border-radius: 4px;
+    }
+
+    /* ── Track Info ────────────────────────────────── */
+    #track-info {
+      position: fixed;
+      bottom: 14px;
+      right: 18px;
+      font-family: var(--font-body);
+      font-size: 12px;
+      font-weight: 400;
+      color: var(--color-track);
+      letter-spacing: 0.03em;
+      text-align: right;
+      max-width: 320px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      opacity: 0;
+      transition: opacity 400ms ease;
+    }
+    #track-info.visible { opacity: 1; }
+
+    /* ── Idle state ────────────────────────────────── */
+    #idle-msg {
+      font-family: var(--font-body);
+      font-size: 14px;
+      color: var(--color-faded);
+      letter-spacing: 0.04em;
+      opacity: 0;
+      transition: opacity 400ms ease;
+    }
+    #idle-msg.visible { opacity: 1; }
+  </style>
+</head>
+<body>
+  <div id="controls">
+    <button id="lock-btn" aria-label="Toggle click-through">🔓</button>
+    <button id="top-btn" aria-label="Toggle always on top">📌</button>
+  </div>
+
+  <!-- Lyrics display (3-line) -->
+  <div id="lyrics-container">
+    <div id="lyric-prev" class="lyric-line"></div>
+    <div id="lyric-current" class="lyric-line"></div>
+    <div id="lyric-next" class="lyric-line"></div>
+  </div>
+
+  <!-- Ambient visualizer (no-lyrics fallback) -->
+  <div id="visualizer-container">
+    <canvas id="visualizer-canvas"></canvas>
+  </div>
+
+  <!-- Idle message (nothing playing) -->
+  <div id="idle-msg">waiting for music…</div>
+
+  <!-- Track info ribbon -->
+  <div id="track-info"></div>
+
+  <script>
+    const { ipcRenderer } = require('electron');
+
+    // ── DOM refs ───────────────────────────────────
+    const lyricPrev    = document.getElementById('lyric-prev');
+    const lyricCurrent = document.getElementById('lyric-current');
+    const lyricNext    = document.getElementById('lyric-next');
+    const lyricsBox    = document.getElementById('lyrics-container');
+    const vizBox       = document.getElementById('visualizer-container');
+    const vizCanvas    = document.getElementById('visualizer-canvas');
+    const trackInfo    = document.getElementById('track-info');
+    const idleMsg      = document.getElementById('idle-msg');
+    const lockBtn      = document.getElementById('lock-btn');
+    const topBtn       = document.getElementById('top-btn');
+
+    let lastCurrentText = '';
+    let isClickThrough = false;
+    let isPinned = true;
+    let vizRunning = false;
+    let animFrameId = null;
+
+    // ── UI Mode Switching ─────────────────────────
+    function showLyrics() {
+      lyricsBox.classList.remove('hidden');
+      vizBox.classList.remove('visible');
+      idleMsg.classList.remove('visible');
+      stopVisualizer();
+    }
+
+    function showVisualizer() {
+      lyricsBox.classList.add('hidden');
+      vizBox.classList.add('visible');
+      idleMsg.classList.remove('visible');
+      startVisualizer();
+    }
+
+    function showIdle() {
+      lyricsBox.classList.add('hidden');
+      vizBox.classList.remove('visible');
+      idleMsg.classList.add('visible');
+      trackInfo.classList.remove('visible');
+      stopVisualizer();
+    }
+
+    function updateClickThroughState(enabled) {
+      isClickThrough = enabled;
+      lockBtn.textContent = enabled ? '🔒' : '🔓';
+      lockBtn.classList.toggle('active', enabled);
+      lockBtn.setAttribute(
+        'title',
+        enabled
+          ? 'Click to accept mouse events (Ctrl+Shift+L)'
+          : 'Click to let clicks pass through (Ctrl+Shift+L)'
+      );
+    }
+
+    function updateAlwaysOnTopState(enabled) {
+      isPinned = enabled;
+      topBtn.textContent = enabled ? '📌' : '🪟';
+      topBtn.classList.toggle('active', enabled);
+      topBtn.setAttribute(
+        'title',
+        enabled
+          ? 'Click to let other windows cover the overlay'
+          : 'Click to keep the overlay pinned above everything'
+      );
+    }
+
+    updateClickThroughState(false);
+    updateAlwaysOnTopState(true);
+
+    lockBtn.addEventListener('click', () => {
+      ipcRenderer.send('toggle-clickthrough');
+    });
+
+    topBtn.addEventListener('click', () => {
+      ipcRenderer.send('toggle-always-on-top');
+    });
+
+    ipcRenderer.on('clickthrough-changed', (_e, enabled) => {
+      updateClickThroughState(enabled);
+    });
+
+    ipcRenderer.on('always-on-top-changed', (_e, enabled) => {
+      updateAlwaysOnTopState(enabled);
+    });
+
+    ipcRenderer.on('lyric-update', (_e, { prev, current, next }) => {
+      // Only switch back to lyrics mode if we were in visualizer
+      if (vizBox.classList.contains('visible') || lyricsBox.classList.contains('hidden')) {
+        showLyrics();
+      }
+
+      lyricPrev.textContent = prev;
+      lyricNext.textContent = next;
+
+      if (current !== lastCurrentText) {
+        lastCurrentText = current;
+        lyricCurrent.classList.remove('animate-in');
+        // Force reflow so the animation restarts
+        void lyricCurrent.offsetWidth;
+        lyricCurrent.textContent = current;
+        lyricCurrent.classList.add('animate-in');
+      }
+    });
+
+    ipcRenderer.on('track-change', (_e, { title, artist }) => {
+      trackInfo.textContent = `${artist} — ${title}`;
+      trackInfo.classList.add('visible');
+      lastCurrentText = '';
+    });
+
+    ipcRenderer.on('no-track', () => {
+      showIdle();
+      lastCurrentText = '';
+    });
+
+    ipcRenderer.on('no-lyrics', () => {
+      showVisualizer();
+    });
+
+    // ── Ambient Visualizer (Canvas) ───────────────
+    // Slow sine-wave paths + drifting dots — calm, atmospheric, lightweight.
+
+    const ctx = vizCanvas.getContext('2d');
+    let dpr = window.devicePixelRatio || 1;
+    let cW, cH;
+
+    function sizeCanvas() {
+      dpr = window.devicePixelRatio || 1;
+      const rect = vizCanvas.getBoundingClientRect();
+      cW = rect.width;
+      cH = rect.height;
+      vizCanvas.width = cW * dpr;
+      vizCanvas.height = cH * dpr;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+    sizeCanvas();
+    window.addEventListener('resize', sizeCanvas);
+
+    // Particle pool
+    const PARTICLE_COUNT = 35;
+    const particles = [];
+    for (let i = 0; i < PARTICLE_COUNT; i++) {
+      particles.push({
+        x: Math.random() * 720,
+        y: Math.random() * 140,
+        r: Math.random() * 1.8 + 0.6,
+        vx: (Math.random() - 0.5) * 0.25,
+        vy: (Math.random() - 0.5) * 0.15,
+        alpha: Math.random() * 0.35 + 0.1,
+      });
+    }
+
+    function drawVisualizer(t) {
+      if (!vizRunning) return;
+      ctx.clearRect(0, 0, cW, cH);
+
+      // ── Sine wave paths ──────────────
+      const waveCount = 3;
+      for (let w = 0; w < waveCount; w++) {
+        ctx.beginPath();
+        const baseY = cH * 0.35 + w * 22;
+        const amp = 14 + w * 6;
+        const freq = 0.004 - w * 0.0008;
+        const speed = 0.0004 + w * 0.00012;
+        const phase = t * speed + w * 1.8;
+
+        for (let x = 0; x <= cW; x += 2) {
+          const y = baseY + Math.sin(x * freq + phase) * amp
+                          + Math.sin(x * freq * 1.7 + phase * 0.6) * (amp * 0.35);
+          if (x === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+
+        const alpha = 0.12 - w * 0.03;
+        ctx.strokeStyle = `rgba(212, 162, 78, ${alpha})`;
+        ctx.lineWidth = 1.4;
+        ctx.stroke();
+      }
+
+      // ── Drifting particles ───────────
+      for (const p of particles) {
+        p.x += p.vx;
+        p.y += p.vy;
+
+        // Wrap around
+        if (p.x < -4) p.x = cW + 4;
+        if (p.x > cW + 4) p.x = -4;
+        if (p.y < -4) p.y = cH + 4;
+        if (p.y > cH + 4) p.y = -4;
+
+        // Gentle vertical oscillation
+        const osc = Math.sin(t * 0.001 + p.x * 0.01) * 0.3;
+        const drawY = p.y + osc;
+
+        ctx.beginPath();
+        ctx.arc(p.x, drawY, p.r, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(255, 250, 240, ${p.alpha})`;
+        ctx.fill();
+      }
+
+      animFrameId = requestAnimationFrame(drawVisualizer);
+    }
+
+    function startVisualizer() {
+      if (vizRunning) return;
+      vizRunning = true;
+      sizeCanvas();
+      animFrameId = requestAnimationFrame(drawVisualizer);
+    }
+
+    function stopVisualizer() {
+      vizRunning = false;
+      if (animFrameId) {
+        cancelAnimationFrame(animFrameId);
+        animFrameId = null;
+      }
+    }
+  </script>
+</body>
+</html>
