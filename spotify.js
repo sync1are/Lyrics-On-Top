@@ -4,9 +4,9 @@ const { shell, app } = require('electron');
 const fs = require('fs');
 const path = require('path');
 
-require('dotenv').config();
-const CLIENT_ID = process.env.SPOTIFY_CLIENT_ID; // Loaded from .env
-const CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET; // Loaded from .env
+
+const CLIENT_ID = 'CLIENT_ID'; // Loaded from .env
+const CLIENT_SECRET = 'SECRET_CLIENT_ID'; // Loaded from .env
 const REDIRECT_URI = 'http://127.0.0.1:8888/callback';
 const SCOPES = 'user-read-currently-playing user-read-playback-state';
 const TOKEN_FILE = path.join(app.getPath('userData'), 'spotify-tokens.json');
